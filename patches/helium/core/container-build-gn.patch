@@ -1,0 +1,32 @@
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1,5 +1,6 @@
+ # ... existing code
+ 
++# HELIUM: Container feature files
+ source_set("containers") {
+   sources = [
+     "containers/container_registry.cc",
+@@ -12,6 +13,25 @@ source_set("containers") {
+     "//components/prefs",
+   ]
+ }
++
++# HELIUM: Container unit tests
++test("container_unittests") {
++  sources = [
++    "containers/container_registry_unittest.cc",
++  ]
++  
++  deps = [
++    ":containers",
++    "//base",
++    "//base/test:test_support",
++    "//chrome/test:test_support",
++    "//components/prefs",
++    "//components/sync_preferences:test_support",
++    "//testing/gtest",
++  ]
++}
+ 
+ # ... rest of existing code

@@ -1,0 +1,151 @@
+--- /dev/null
++++ b/chrome/browser/containers/container_registry_unittest.cc
+@@ -0,0 +1,142 @@
++// HELIUM: Unit tests for ContainerRegistry
++#include "chrome/browser/containers/container_registry.h"
++
++#include "base/test/task_environment.h"
++#include "chrome/test/base/testing_profile.h"
++#include "components/sync_preferences/testing_pref_service_syncable.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++class ContainerRegistryTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    profile_ = std::make_unique<TestingProfile>();
++    registry_ = std::make_unique<ContainerRegistry>(profile_.get());
++  }
++
++  void TearDown() override {
++    registry_.reset();
++    profile_.reset();
++  }
++
++  base::test::TaskEnvironment task_environment_;
++  std::unique_ptr<TestingProfile> profile_;
++  std::unique_ptr<ContainerRegistry> registry_;
++};
++
++// Test that default containers are created on first run
++TEST_F(ContainerRegistryTest, DefaultContainersCreated) {
++  auto containers = registry_->GetAllContainers();
++  // Should have 4 default containers: Personal, Work, Banking, Shopping
++  EXPECT_EQ(containers.size(), 4u);
++  
++  bool found_personal = false;
++  bool found_work = false;
++  for (const auto& c : containers) {
++    if (c.name == "Personal") found_personal = true;
++    if (c.name == "Work") found_work = true;
++  }
++  EXPECT_TRUE(found_personal);
++  EXPECT_TRUE(found_work);
++}
++
++// Test creating a new container
++TEST_F(ContainerRegistryTest, CreateContainer) {
++  const Container* container = registry_->CreateContainer(
++      "Test Container", "red", "star");
++  
++  ASSERT_NE(container, nullptr);
++  EXPECT_EQ(container->name, "Test Container");
++  EXPECT_EQ(container->color, "red");
++  EXPECT_EQ(container->icon, "star");
++  EXPECT_FALSE(container->id.empty());
++  EXPECT_FALSE(container->cookie_store_id.empty());
++}
++
++// Test retrieving a container by ID
++TEST_F(ContainerRegistryTest, GetContainerById) {
++  const Container* created = registry_->CreateContainer(
++      "Find Me", "green", "search");
++  ASSERT_NE(created, nullptr);
++  
++  const Container* found = registry_->GetContainerById(created->id);
++  ASSERT_NE(found, nullptr);
++  EXPECT_EQ(found->name, "Find Me");
++  EXPECT_EQ(found->id, created->id);
++}
++
++// Test that GetContainerById returns nullptr for non-existent ID
++TEST_F(ContainerRegistryTest, GetContainerByIdNotFound) {
++  const Container* found = registry_->GetContainerById("nonexistent-id");
++  EXPECT_EQ(found, nullptr);
++}
++
++// Test deleting a container
++TEST_F(ContainerRegistryTest, DeleteContainer) {
++  const Container* created = registry_->CreateContainer(
++      "Delete Me", "purple", "trash");
++  ASSERT_NE(created, nullptr);
++  std::string id = created->id;
++  
++  size_t count_before = registry_->GetAllContainers().size();
++  bool deleted = registry_->DeleteContainer(id);
++  EXPECT_TRUE(deleted);
++  
++  size_t count_after = registry_->GetAllContainers().size();
++  EXPECT_EQ(count_after, count_before - 1);
++  
++  const Container* should_be_null = registry_->GetContainerById(id);
++  EXPECT_EQ(should_be_null, nullptr);
++}
++
++// Test deleting a non-existent container returns false
++TEST_F(ContainerRegistryTest, DeleteNonexistentContainer) {
++  bool deleted = registry_->DeleteContainer("fake-id");
++  EXPECT_FALSE(deleted);
++}
++
++// Test observer notifications
++class TestObserver : public ContainerRegistry::Observer {
++ public:
++  void OnContainerCreated(const Container& container) override {
++    created_count++;
++    last_created_name = container.name;
++  }
++  void OnContainerDeleted(const Container& container) override {
++    deleted_count++;
++    last_deleted_name = container.name;
++  }
++  
++  int created_count = 0;
++  int deleted_count = 0;
++  std::string last_created_name;
++  std::string last_deleted_name;
++};
++
++TEST_F(ContainerRegistryTest, ObserverNotifications) {
++  TestObserver observer;
++  registry_->AddObserver(&observer);
++  
++  // Create a container - observer should be notified
++  const Container* created = registry_->CreateContainer(
++      "Observable", "cyan", "eye");
++  EXPECT_GT(observer.created_count, 0);
++  EXPECT_EQ(observer.last_created_name, "Observable");
++  
++  // Delete it - observer should be notified
++  int created_before_delete = observer.created_count;
++  registry_->DeleteContainer(created->id);
++  EXPECT_EQ(observer.deleted_count, 1);
++  EXPECT_EQ(observer.last_deleted_name, "Observable");
++  // created_count should not have changed
++  EXPECT_EQ(observer.created_count, created_before_delete);
++  
++  registry_->RemoveObserver(&observer);
++}
++
++// Test that containers persist across registry instances (via prefs)
++TEST_F(ContainerRegistryTest, PersistenceAcrossInstances) {
++  const Container* created = registry_->CreateContainer(
++      "Persistent", "yellow", "save");
++  std::string id = created->id;
++  
++  // Create a new registry instance with the same profile
++  auto new_registry = std::make_unique<ContainerRegistry>(profile_.get());
++  const Container* loaded = new_registry->GetContainerById(id);
++  
++  ASSERT_NE(loaded, nullptr);
++  EXPECT_EQ(loaded->name, "Persistent");
++}
