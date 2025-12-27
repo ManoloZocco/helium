@@ -1,0 +1,73 @@
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -500,6 +500,10 @@
+ #define IDC_CONTENT_CONTEXT_OPENLINKINPROFILE 52000
+ #define IDC_CONTENT_CONTEXT_OPENLINKINPROFILE_LAST 52100
+ 
++// HELIUM: Container context menu IDs
++#define IDC_CONTENT_CONTEXT_OPENLINKINCONTAINER 52200
++#define IDC_CONTENT_CONTEXT_OPENLINKINCONTAINER_LAST 52300
++
+ // ...
+ 
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
+@@ -200,6 +200,8 @@ class RenderViewContextMenu : public Ren
+   void AppendOpenInChrome(const GURL& link_url);
+   void AppendOpenInProfileSubMenu();
++  // HELIUM
++  void AppendOpenInContainerSubMenu();
+ 
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -25,6 +25,7 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/containers/container_registry.h"
+ 
+ // ...
+ 
+@@ -500,6 +501,7 @@ void RenderViewContextMenu::InitMenu() {
+   if (show_open_in_profile)
+     AppendOpenInProfileSubMenu();
++  AppendOpenInContainerSubMenu();
+   
+   // ...
+ }
+ 
++void RenderViewContextMenu::AppendOpenInContainerSubMenu() {
++  Profile* profile = GetProfile();
++  auto* registry = ContainerRegistry::Get(profile);
++  if (!registry) return;
++
++  std::vector<Container> containers = registry->GetAllContainers();
++  if (containers.empty()) return;
++
++  ui::SimpleMenuModel* container_menu = new ui::SimpleMenuModel(this);
++  int command_id = IDC_CONTENT_CONTEXT_OPENLINKINCONTAINER;
++  
++  for (const auto& container : containers) {
++    // Pass container ID via params or map command_id to container
++    // For simplicity, we assume strictly sequential mapping here for the walkthrough patch
++    container_menu->AddItem(command_id++, base::ASCIIToUTF16(container.name));
++  }
++
++  menu_model_.AddSubMenu(IDC_CONTENT_CONTEXT_OPENLINKINCONTAINER, 
++                         base::ASCIIToUTF16("Open Link in New Container Tab"), 
++                         container_menu);
++}
++
++bool RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
++  // ... existing checks
++
++  if (id >= IDC_CONTENT_CONTEXT_OPENLINKINCONTAINER &&
++      id < IDC_CONTENT_CONTEXT_OPENLINKINCONTAINER_LAST) {
++     // Logic to find container by ID offset
++     // Create WebContents
++     // SetContainerId(...)
++     // LoadURL
++     return true;
++  }
++
++  return false;
++}

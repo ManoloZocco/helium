@@ -1,0 +1,41 @@
+--- a/content/public/browser/web_contents.h
++++ b/content/public/browser/web_contents.h
+@@ -100,6 +100,10 @@ class CONTENT_EXPORT WebContents : publi
+     // Returns the unique ID for this WebContents.
+     virtual const std::string& GetMediaSessionId() = 0;
+ 
++    // HELIUM: Container support
++    virtual void SetContainerId(const std::string& container_id) = 0;
++    virtual const std::string& GetContainerId() const = 0;
++
+     // Returns the Page object associated with this WebContents.
+     virtual Page& GetPrimaryPage() = 0;
+ 
+--- a/content/browser/web_contents/web_contents_impl.h
++++ b/content/browser/web_contents/web_contents_impl.h
+@@ -100,6 +100,8 @@ class CONTENT_EXPORT WebContentsImpl : p
+   // WebContents implementation:
+   const std::string& GetMediaSessionId() override;
++  void SetContainerId(const std::string& container_id) override;
++  const std::string& GetContainerId() const override;
+   Page& GetPrimaryPage() override;
+ 
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -200,6 +200,16 @@ const std::string& WebContentsImpl::GetM
+   return media_session_id_;
+ }
+ 
++void WebContentsImpl::SetContainerId(const std::string& container_id) {
++  container_id_ = container_id;
++  // HELIUM: Force reload or partition update might be needed here, 
++  // but usually this is set before navigation.
++}
++
++const std::string& WebContentsImpl::GetContainerId() const {
++  return container_id_;
++}
++
+ Page& WebContentsImpl::GetPrimaryPage() {
+   return primary_page_;
+ }

@@ -1,0 +1,121 @@
+--- a/chrome/browser/ui/tab_helpers.cc
++++ b/chrome/browser/ui/tab_helpers.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
+ #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
+ #include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
++#include "chrome/browser/ui/containers/container_tab_helper.h"
+ 
+ using content::WebContents;
+ 
+@@ -100,4 +101,5 @@ void TabHelpers::AttachTabHelpers(WebCon
+   BookmarkTabHelper::CreateForWebContents(web_contents);
+   SafeBrowsingTabObserver::CreateForWebContents(web_contents);
++  ContainerTabHelper::CreateForWebContents(web_contents);
+ }
+ 
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -500,6 +500,9 @@ bool BrowserCommandController::ExecuteCo
+     case IDC_NEW_INCOGNITO_WINDOW:
+       NewIncognitoWindow(profile());
+       break;
++    case IDC_NEW_CONTAINER_TAB:
++      // HELIUM: Open new tab in specific container (logic using Registry)
++      break;
+     case IDC_CLOSE_WINDOW:
+       base::RecordAction(base::UserMetricsAction("CloseWindow"));
+       window()->Close();
+--- /dev/null
++++ b/chrome/browser/ui/containers/container_tab_helper.h
+@@ -0,0 +1,38 @@
++// HELIUM: Container Tab Helper
++#ifndef CHROME_BROWSER_UI_CONTAINERS_CONTAINER_TAB_HELPER_H_
++#define CHROME_BROWSER_UI_CONTAINERS_CONTAINER_TAB_HELPER_H_
++
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++#include "ui/gfx/color_utils.h"
++
++class ContainerTabHelper
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<ContainerTabHelper> {
++ public:
++  ~ContainerTabHelper() override;
++
++  // Get color for painting UI
++  bool GetContainerColor(SkColor* color) const;
++  std::string GetContainerName() const;
++
++ private:
++  explicit ContainerTabHelper(content::WebContents* web_contents);
++  friend class content::WebContentsUserData<ContainerTabHelper>;
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_CONTAINERS_CONTAINER_TAB_HELPER_H_
+--- /dev/null
++++ b/chrome/browser/ui/containers/container_tab_helper.cc
+@@ -0,0 +1,41 @@
++// HELIUM
++#include "chrome/browser/ui/containers/container_tab_helper.h"
++#include "content/public/browser/web_contents.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/containers/container_registry.h"
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(ContainerTabHelper);
++
++ContainerTabHelper::ContainerTabHelper(content::WebContents* web_contents)
++    : content::WebContentsObserver(web_contents),
++      content::WebContentsUserData<ContainerTabHelper>(*web_contents) {}
++
++ContainerTabHelper::~ContainerTabHelper() = default;
++
++bool ContainerTabHelper::GetContainerColor(SkColor* color) const {
++  Profile* profile = Profile::FromBrowserContext(GetWebContents().GetBrowserContext());
++  auto* registry = ContainerRegistry::Get(profile);
++  if (!registry) return false;
++
++  std::string id = GetWebContents().GetContainerId();
++  if (id.empty()) return false;
++
++  const Container* container = registry->GetContainerById(id);
++  if (!container) return false;
++
++  // Parse color string to SkColor (simplification)
++  if (container->color == "blue") *color = SK_ColorBLUE;
++  else if (container->color == "red") *color = SK_ColorRED;
++  else if (container->color == "green") *color = SK_ColorGREEN;
++  else if (container->color == "orange") *color = 0xFFFFA500;
++  else *color = SK_ColorGRAY;
++  
++  return true;
++}
++
+--- a/chrome/browser/ui/views/tabs/tab.cc
++++ b/chrome/browser/ui/views/tabs/tab.cc
+@@ -25,6 +25,7 @@
+ #include "ui/gfx/canvas.h"
+ #include "ui/gfx/color_palette.h"
+ #include "ui/gfx/geometry/rect.h"
++#include "chrome/browser/ui/containers/container_tab_helper.h"
+ 
+ // ... existing code
+ 
+@@ -500,6 +500,18 @@ void Tab::OnPaint(gfx::Canvas* canvas) {
+   // Existing painting logic
+   // ...
+ 
++  // HELIUM: Paint container indicator
++  content::WebContents* contents = GetWebContents(); // Helper method to get contents associated with tab
++  if (contents) {
++    auto* helper = ContainerTabHelper::FromWebContents(contents);
++    SkColor container_color;
++    if (helper && helper->GetContainerColor(&container_color)) {
++      // Draw a bottom strip
++      gfx::Rect bounds = GetLocalBounds();
++      gfx::Rect strip_rect(0, bounds.height() - 4, bounds.width(), 4);
++      canvas->FillRect(strip_rect, container_color);
++    }
++  }
+ }

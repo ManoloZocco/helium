@@ -1,0 +1,211 @@
+--- /dev/null
++++ b/chrome/browser/containers/container_registry.h
+@@ -0,0 +1,81 @@
++// HELIUM
++#ifndef CHROME_BROWSER_CONTAINERS_CONTAINER_REGISTRY_H_
++#define CHROME_BROWSER_CONTAINERS_CONTAINER_REGISTRY_H_
++
++#include <map>
++#include <string>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "base/observer_list.h"
++#include "components/keyed_service/core/keyed_service.h"
++#include "ui/gfx/color_utils.h"
++
++class Profile;
++
++struct Container {
++  std::string id;
++  std::string name;
++  std::string icon;
++  std::string color;
++  // cookie_store_id is often used by extensions (e.g. "firefox-container-1")
++  std::string cookie_store_id; 
++
++  bool operator==(const Container& other) const {
++    return id == other.id;
++  }
++};
++
++class ContainerRegistry : public KeyedService {
++ public:
++  explicit ContainerRegistry(Profile* profile);
++  ~ContainerRegistry() override;
++
++  static ContainerRegistry* Get(Profile* profile);
++
++  // CRUD
++  const Container* CreateContainer(const std::string& name,
++                                   const std::string& color,
++                                   const std::string& icon);
++  const Container* GetContainerById(const std::string& id) const;
++  std::vector<Container> GetAllContainers() const;
++  bool DeleteContainer(const std::string& id);
++
++  class Observer : public base::CheckedObserver {
++   public:
++    virtual void OnContainerCreated(const Container& container) {}
++    virtual void OnContainerDeleted(const Container& container) {}
++  };
++
++  void AddObserver(Observer* observer);
++  void RemoveObserver(Observer* observer);
++
++ private:
++  void LoadFromPrefs();
++  void SaveToPrefs();
++  void EnsureDefaultContainers();
++
++  raw_ptr<Profile> profile_;
++  std::map<std::string, Container> containers_;
++  base::ObserverList<Observer> observers_;
++};
++
++#endif  // CHROME_BROWSER_CONTAINERS_CONTAINER_REGISTRY_H_
+--- /dev/null
++++ b/chrome/browser/containers/container_registry.cc
+@@ -0,0 +1,154 @@
++// HELIUM
++#include "chrome/browser/containers/container_registry.h"
++
++#include "base/guid.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/values.h"
++#include "chrome/browser/profiles/profile.h"
++#include "components/pref_registry/pref_registry_syncable.h"
++#include "components/prefs/pref_service.h"
++
++namespace {
++const char kContainerPrefsKey[] = "helium.containers";
++}
++
++ContainerRegistry::ContainerRegistry(Profile* profile) : profile_(profile) {
++  LoadFromPrefs();
++  if (containers_.empty()) {
++    EnsureDefaultContainers();
++  }
++}
++
++ContainerRegistry::~ContainerRegistry() = default;
++
++// static
++ContainerRegistry* ContainerRegistry::Get(Profile* profile) {
++  // In real implementation this would come from a ContainerRegistryFactory
++  // For now assuming the factory exists and is hooked up
++  return nullptr; // Placeholder for compilation in walkthrough
++}
++
++const Container* ContainerRegistry::CreateContainer(const std::string& name,
++                                                    const std::string& color,
++                                                    const std::string& icon) {
++  std::string id = base::GenerateGUID();
++  Container c;
++  c.id = id;
++  c.name = name;
++  c.color = color;
++  c.icon = icon;
++  c.cookie_store_id = "helium-container-" + id;
++
++  containers_[id] = c;
++  SaveToPrefs();
++  
++  for (auto& observer : observers_)
++    observer.OnContainerCreated(c);
++
++  return &containers_[id];
++}
++
++const Container* ContainerRegistry::GetContainerById(const std::string& id) const {
++  auto it = containers_.find(id);
++  if (it != containers_.end())
++    return &it->second;
++  return nullptr;
++}
++
++std::vector<Container> ContainerRegistry::GetAllContainers() const {
++  std::vector<Container> result;
++  for (const auto& pair : containers_) {
++    result.push_back(pair.second);
++  }
++  return result;
++}
++
++bool ContainerRegistry::DeleteContainer(const std::string& id) {
++  auto it = containers_.find(id);
++  if (it == containers_.end())
++    return false;
++
++  Container copy = it->second;
++  containers_.erase(it);
++  SaveToPrefs();
++
++  for (auto& observer : observers_)
++    observer.OnContainerDeleted(copy);
++
++  return true;
++}
++
++void ContainerRegistry::AddObserver(Observer* observer) {
++  observers_.AddObserver(observer);
++}
++
++void ContainerRegistry::RemoveObserver(Observer* observer) {
++  observers_.RemoveObserver(observer);
++}
++
++void ContainerRegistry::LoadFromPrefs() {
++  const base::Value::List& list = profile_->GetPrefs()->GetList(kContainerPrefsKey);
++  for (const auto& val : list) {
++    if (!val.is_dict()) continue;
++    const auto& dict = val.GetDict();
++    Container c;
++    c.id = *dict.FindString("id");
++    c.name = *dict.FindString("name");
++    c.color = *dict.FindString("color");
++    c.icon = *dict.FindString("icon");
++    c.cookie_store_id = *dict.FindString("cookie_store_id");
++    containers_[c.id] = c;
++  }
++}
++
++void ContainerRegistry::SaveToPrefs() {
++  base::Value::List list;
++  for (const auto& pair : containers_) {
++    base::Value::Dict dict;
++    dict.Set("id", pair.second.id);
++    dict.Set("name", pair.second.name);
++    dict.Set("color", pair.second.color);
++    dict.Set("icon", pair.second.icon);
++    dict.Set("cookie_store_id", pair.second.cookie_store_id);
++    list.Append(std::move(dict));
++  }
++  profile_->GetPrefs()->SetList(kContainerPrefsKey, std::move(list));
++}
++
++void ContainerRegistry::EnsureDefaultContainers() {
++  CreateContainer("Personal", "blue", "fingerprint");
++  CreateContainer("Work", "orange", "briefcase");
++  CreateContainer("Banking", "green", "dollar");
++  CreateContainer("Shopping", "pink", "cart");
++}
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -40,6 +40,7 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_metrics.h"
++#include "chrome/browser/containers/container_registry.h"
+ 
+ using base::Time;
+ using base::TimeDelta;
+@@ -300,6 +301,9 @@ void ProfileImpl::RegisterProfilePrefs(u
+   registry->RegisterBooleanPref(prefs::kForceEphemeralProfiles, false);
+   registry->RegisterBooleanPref(prefs::kProfileUsingDefaultName, true);
++  
++  // HELIUM: Container preferences
++  registry->RegisterListPref("helium.containers");
+ 
+   // ... existing prefs
+ }

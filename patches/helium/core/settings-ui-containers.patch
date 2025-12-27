@@ -1,0 +1,101 @@
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/ui/webui/settings/about_handler.h"
+ #include "chrome/browser/ui/webui/settings/reset_settings_handler.h"
++#include "chrome/browser/ui/webui/settings/container_settings_handler.h"
+ 
+ namespace settings {
+ 
+@@ -100,6 +101,7 @@ SettingsUI::SettingsUI(content::WebUI* w
+   AddSettingsPageUIHandler(std::make_unique<AboutHandler>(profile));
+   AddSettingsPageUIHandler(std::make_unique<ResetSettingsHandler>(profile));
++  AddSettingsPageUIHandler(std::make_unique<ContainerSettingsHandler>(profile));
+ 
+   // ...
+ }
+--- /dev/null
++++ b/chrome/browser/ui/webui/settings/container_settings_handler.h
+@@ -0,0 +1,30 @@
++// HELIUM
++#ifndef CHROME_BROWSER_UI_WEBUI_SETTINGS_CONTAINER_SETTINGS_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_SETTINGS_CONTAINER_SETTINGS_HANDLER_H_
++
++#include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
++
++class Profile;
++
++namespace settings {
++
++class ContainerSettingsHandler : public SettingsPageUIHandler {
++ public:
++  explicit ContainerSettingsHandler(Profile* profile);
++  ~ContainerSettingsHandler() override;
++
++  // SettingsPageUIHandler:
++  void OnJavascriptAllowed() override;
++  void OnJavascriptDisallowed() override;
++  void RegisterMessages() override;
++
++ private:
++  void HandleGetContainers(const base::Value::List& args);
++  void HandleCreateContainer(const base::Value::List& args);
++  
++  raw_ptr<Profile> profile_;
++};
++
++}  // namespace settings
++
++#endif  // CHROME_BROWSER_UI_WEBUI_SETTINGS_CONTAINER_SETTINGS_HANDLER_H_
+--- /dev/null
++++ b/chrome/browser/ui/webui/settings/container_settings_handler.cc
+@@ -0,0 +1,52 @@
++// HELIUM
++#include "chrome/browser/ui/webui/settings/container_settings_handler.h"
++#include "chrome/browser/containers/container_registry.h"
++#include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/web_ui.h"
++
++namespace settings {
++
++ContainerSettingsHandler::ContainerSettingsHandler(Profile* profile)
++    : profile_(profile) {}
++
++ContainerSettingsHandler::~ContainerSettingsHandler() = default;
++
++void ContainerSettingsHandler::OnJavascriptAllowed() {}
++void ContainerSettingsHandler::OnJavascriptDisallowed() {}
++
++void ContainerSettingsHandler::RegisterMessages() {
++  web_ui()->RegisterMessageCallback("getContainers",
++      base::BindRepeating(&ContainerSettingsHandler::HandleGetContainers,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback("createContainer",
++      base::BindRepeating(&ContainerSettingsHandler::HandleCreateContainer,
++                          base::Unretained(this)));
++}
++
++void ContainerSettingsHandler::HandleGetContainers(const base::Value::List& args) {
++  CHECK_EQ(1U, args.size());
++  const base::Value& callback_id = args[0];
++
++  auto* registry = ContainerRegistry::Get(profile_);
++  base::Value::List containers_list;
++  if (registry) {
++    for (const auto& c : registry->GetAllContainers()) {
++      base::Value::Dict dict;
++      dict.Set("id", c.id);
++      dict.Set("name", c.name);
++      dict.Set("color", c.color);
++      containers_list.Append(std::move(dict));
++    }
++  }
++  ResolveJavascriptCallback(callback_id, containers_list);
++}
++
++void ContainerSettingsHandler::HandleCreateContainer(const base::Value::List& args) {
++  // Parse args (name, color, icon) and call Registry->CreateContainer
++  // Then ResolveJavascriptCallback with success
++}
++
++}  // namespace settings

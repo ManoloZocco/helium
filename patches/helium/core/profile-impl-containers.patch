@@ -1,0 +1,41 @@
+--- a/chrome/browser/profiles/profile_impl.h
++++ b/chrome/browser/profiles/profile_impl.h
+@@ -100,6 +100,8 @@ class ProfileImpl : public Profile {
+   base::FilePath GetPath() override;
+   bool IsOffTheRecord() override;
+   content::StoragePartition* GetDefaultStoragePartition() override;
++  content::StoragePartition* GetStoragePartitionForContainer(
++      const std::string& container_id, bool can_create) override;
+ 
+   // ... other overrides
+ 
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -25,6 +25,8 @@
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/storage_partition_config.h"
+ #include "chrome/browser/containers/container_registry.h"
+ 
+ content::StoragePartition* ProfileImpl::GetStoragePartitionForContainer(
+     const std::string& container_id,
+     bool can_create) {
+   // HELIUM: Wiring StoragePartition to ContainerRegistry
+   auto* registry = ContainerRegistry::Get(this);
+   if (!registry) return nullptr;
+ 
+   const Container* container = registry->GetContainerById(container_id);
+   if (!container) return nullptr;
+ 
+   // Create a StoragePartitionConfig unique to this container
+   // We use the container ID as the partition_name, and a specific domain.
+   // in_memory is false (persistent) unless we decide otherwise.
+   content::StoragePartitionConfig config = content::StoragePartitionConfig::Create(
+       this,
+       "helium-container-domain", // partition_domain
+       container->id,             // partition_name
+       false                      // in_memory
+   );
+ 
+   // Use the standard BrowserContext method to retrieve/create the partition
+   return this->GetStoragePartition(config, can_create);
+ }

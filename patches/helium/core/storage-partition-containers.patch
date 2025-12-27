@@ -1,0 +1,14 @@
+--- a/content/public/browser/browser_context.h
++++ b/content/public/browser/browser_context.h
+@@ -213,6 +213,11 @@ class CONTENT_EXPORT BrowserContext : pu
+   // the case of the system-wide storage partition) or "user_path" (in the
+   // case of the user-wide storage partition).
+   virtual base::FilePath GetPath() = 0;
++
++  // HELIUM: Get StoragePartition for a specific container
++  virtual StoragePartition* GetStoragePartitionForContainer(
++      const std::string& container_id,
++      bool can_create = true) { return nullptr; }
+ 
+   // Returns the unique absolute path to the directory that contains the
+   // storage partition's data (e.g. cookies, local storage, etc).
